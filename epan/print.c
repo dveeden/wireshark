@@ -1389,7 +1389,7 @@ void write_fields_proto_tree(output_fields_t *fields, epan_dissect_t *edt, colum
                 str = (gchar *)g_ptr_array_index(fv_p, j);
                 arr = g_strsplit(str, "\"", -1);
                 if (arr != NULL && arr[0] != NULL)
-                    tmpstr = g_strjoinv("\\\"", g_strsplit(str, "\"", -1));
+                    tmpstr = g_strjoinv("\\\"", arr);
                 else
                     tmpstr = g_strdup(str);
                 fputs(tmpstr, fh);
