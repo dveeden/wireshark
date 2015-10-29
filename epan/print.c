@@ -1376,6 +1376,8 @@ void write_fields_proto_tree(output_fields_t *fields, epan_dissect_t *edt, colum
         if (NULL != fields->field_values[i]) {
             GPtrArray *fv_p;
             gchar * str;
+            gchar * tmpstr;
+            gchar ** arr;
             gsize j;
             fv_p = fields->field_values[i];
             if (fields->quote != '\0') {
@@ -1385,7 +1387,14 @@ void write_fields_proto_tree(output_fields_t *fields, epan_dissect_t *edt, colum
             /* Output the array of (partial) field values */
             for (j = 0; j < g_ptr_array_len(fv_p); j++ ) {
                 str = (gchar *)g_ptr_array_index(fv_p, j);
-                fputs(str, fh);
+                arr = g_strsplit(str, "\"", -1);
+                if (arr != NULL && arr[0] != NULL)
+                    tmpstr = g_strjoinv("\\\"", g_strsplit(str, "\"", -1));
+                else
+                    tmpstr = g_strdup(str);
+                fputs(tmpstr, fh);
+                g_free(tmpstr);
+                g_strfreev(arr);
                 g_free(str);
             }
             if (fields->quote != '\0') {
