@@ -722,6 +722,8 @@ typedef struct mysql_conn_data {
 	guint32 frame_start_ssl;
 	guint32 frame_start_compressed;
 	guint8 compressed_state;
+	gboolean compressed_payload;
+	guint32 compressed_payload_length;
 } mysql_conn_data_t;
 
 struct mysql_frame_data {
@@ -1593,16 +1595,28 @@ hf_mysql_refresh, ett_refresh, mysql_rfsh_flags, ENC_BIG_ENDIAN, BMT_NO_APPEND);
  * https://dev.mysql.com/doc/internals/en/compressed-packet-header.html
  */
 static int
-mysql_dissect_compressed_header(tvbuff_t *tvb, int offset, proto_tree *mysql_tree)
+mysql_dissect_compressed_header(tvbuff_t *tvb, int offset, proto_tree *mysql_tree, mysql_conn_data_t *conn_data)
 {
+	guint32 compressed_payload_length;
+	guint32 packet_length;
+
 	proto_tree_add_item(mysql_tree, hf_mysql_compressed_packet_length, tvb, offset, 3, ENC_LITTLE_ENDIAN);
+	packet_length = tvb_get_guint24(tvb, offset, ENC_LITTLE_ENDIAN);
 	offset += 3;
 
 	proto_tree_add_item(mysql_tree, hf_mysql_compressed_packet_number, tvb, offset, 1, ENC_NA);
 	offset += 1;
 
 	proto_tree_add_item(mysql_tree, hf_mysql_compressed_packet_length_uncompressed, tvb, offset, 3, ENC_LITTLE_ENDIAN);
+	compressed_payload_length = tvb_get_guint24(tvb, offset, ENC_LITTLE_ENDIAN);
 	offset += 3;
+
+	if (compressed_payload_length > 0) {
+		conn_data->compressed_payload = TRUE;
+		conn_data->compressed_payload_length = packet_length;
+	} else {
+		conn_data->compressed_payload = FALSE;
+	}
 
 	return offset;
 }
@@ -2207,6 +2221,7 @@ dissect_mysql_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* dat
 	guint           packet_number;
 	gboolean        is_response, is_ssl = FALSE;
 	mysql_conn_data_t  *conn_data;
+	tvbuff_t	*uncomp_tvb;
 #ifdef CTDEBUG
 	mysql_state_t conn_state_in, conn_state_out, frame_state;
 	guint64         generation;
@@ -2233,6 +2248,8 @@ dissect_mysql_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* dat
 		conn_data->frame_start_ssl= 0;
 		conn_data->frame_start_compressed= 0;
 		conn_data->compressed_state= MYSQL_COMPRESS_NONE;
+		conn_data->compressed_payload= FALSE;
+		conn_data->compressed_payload_length= 0;
 		conversation_add_proto_data(conversation, proto_mysql, conn_data);
 	}
 
@@ -2267,8 +2284,16 @@ dissect_mysql_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* dat
 
 	if ((conn_data->frame_start_compressed) && (pinfo->num > conn_data->frame_start_compressed)) {
 		if (conn_data->compressed_state == MYSQL_COMPRESS_ACTIVE) {
-			offset = mysql_dissect_compressed_header(tvb, offset, tree);
+			offset = mysql_dissect_compressed_header(tvb, offset, tree, conn_data);
 		}
+		if (conn_data->compressed_payload) {
+			uncomp_tvb = tvb_child_uncompress(tvb, tvb, offset, conn_data->compressed_payload_length);
+			if(uncomp_tvb != NULL) {
+				/* add_new_data_source(pinfo, uncomp_tvb, "Uncompressed Packet Data"); */
+				tvb = uncomp_tvb;
+				offset = 0;
+			}
+                }
 	}
 
 	if (tree) {
