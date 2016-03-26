@@ -1384,7 +1384,7 @@ get_capinfos_compiled_info(GString *str)
 }
 
 static void
-get_capinfos_runtime_info(GString *str)
+get_capinfos_runtime_info(GString __attribute__((unused)) *str)
 {
   /* zlib */
 #if defined(HAVE_LIBZ) && !defined(_WIN32)
